@@ -1,10 +1,9 @@
 // TrafficMap.jsx
 import "leaflet/dist/leaflet.css";
-import React, { useEffect, useRef, useState } from "react";
+import { useRef, useState } from "react";
 import { Circle, MapContainer, Popup, TileLayer, useMap } from "react-leaflet";
-import PredictionForm from "./components/PredictionForm";
-import PredictionResults from "./components/PredictionResults";
-import TrafficAPI from "./services/TrafficAPI";
+import PredictionForm from "../components/PredictionForm";
+import PredictionResults from "../components/PredictionResults";
 
 // Component to fly to the new location after search
 const FlyToLocation = ({ lat, lon }) => {
@@ -20,54 +19,9 @@ const TrafficMap = () => {
   const [searchInput, setSearchInput] = useState("");
   const [searchResult, setSearchResult] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
-  const [apiStatus, setApiStatus] = useState("checking");
   const [showPredictionResults, setShowPredictionResults] = useState(false);
   const [currentPrediction, setCurrentPrediction] = useState(null);
   const inputRef = useRef();
-
-  // Initial traffic data with ML predictions
-  const initialTrafficData = React.useMemo(
-    () => [
-      {
-        name: "Indira Nagar, Bangalore",
-        area: "Indiranagar",
-        road: "100 Feet Road",
-        congestion: 96,
-        severity: "High",
-      },
-      {
-        name: "Koramangala, Bangalore",
-        area: "Koramangala",
-        road: "5th Block",
-        congestion: 75,
-        severity: "Medium",
-      },
-      {
-        name: "Whitefield, Bangalore",
-        area: "Whitefield",
-        road: "ITPL Main Road",
-        congestion: 60,
-        severity: "Medium",
-      },
-    ],
-    []
-  );
-
-  // Check API status on component mount
-  useEffect(() => {
-    checkApiHealth();
-  }, []);
-
-  const checkApiHealth = async () => {
-    try {
-      setApiStatus("checking");
-      await TrafficAPI.healthCheck();
-      setApiStatus("connected");
-    } catch (error) {
-      console.warn("API not available, using fallback data:", error);
-      setApiStatus("offline");
-    }
-  };
 
   // Function to get congestion color
   const getCongestionColor = (level) => {
@@ -109,30 +63,6 @@ const TrafficMap = () => {
       return null;
     }
   };
-
-  // Fetch initial locations once
-  useEffect(() => {
-    const fetchInitialLocations = async () => {
-      setIsLoading(true);
-      const results = await Promise.all(
-        initialTrafficData.map(async (item) => {
-          const coords = await getCoordinates(item.name);
-          if (coords) {
-            return {
-              ...item,
-              ...coords,
-              timestamp: new Date().toISOString(),
-              source: "initial",
-            };
-          }
-          return null;
-        })
-      );
-      setLocations(results.filter((loc) => loc !== null));
-      setIsLoading(false);
-    };
-    fetchInitialLocations();
-  }, [initialTrafficData]);
 
   // Handle prediction results
   const handlePredictionResult = (prediction) => {
@@ -198,131 +128,52 @@ const TrafficMap = () => {
   };
 
   return (
-    <div className="flex h-screen bg-gradient-to-br from-gray-50 via-blue-50 to-indigo-50">
-      {/* Enhanced Control Panel */}
-      <div className="w-96 bg-white/90 backdrop-blur-sm shadow-2xl overflow-y-auto border-r border-gray-200/50">
-        {/* Professional Header */}
-        <div className="p-6 bg-gradient-to-r from-blue-600 to-purple-600 text-white">
-          <div className="flex items-center space-x-3 mb-4">
-            <div className="p-2 bg-white/20 rounded-xl">
-              <svg
-                className="w-6 h-6"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-1.447-.894L15 4m0 13V4m0 0L9 7"
-                />
-              </svg>
-            </div>
-            <h2 className="text-xl font-bold">Traffic Control Hub</h2>
-          </div>
-
-          {/* Enhanced API Status */}
-          <div className="flex items-center justify-between">
-            <span className="text-sm text-white/80">System Status</span>
-            <div
-              className={`inline-flex items-center px-3 py-1.5 rounded-full text-sm font-semibold backdrop-blur-sm ${
-                apiStatus === "connected"
-                  ? "bg-green-500/20 text-green-100 border border-green-400/30"
-                  : apiStatus === "checking"
-                  ? "bg-yellow-500/20 text-yellow-100 border border-yellow-400/30"
-                  : "bg-red-500/20 text-red-100 border border-red-400/30"
-              }`}
-            >
-              <div
-                className={`w-2 h-2 rounded-full mr-2 ${
-                  apiStatus === "connected"
-                    ? "bg-green-400 animate-pulse"
-                    : apiStatus === "checking"
-                    ? "bg-yellow-400 animate-pulse"
-                    : "bg-red-400"
-                }`}
-              ></div>
-              {apiStatus === "connected" && "ML API Connected"}
-              {apiStatus === "checking" && "Checking API..."}
-              {apiStatus === "offline" && "Demo Mode"}
-            </div>
-          </div>
-        </div>
-
-        {/* Enhanced ML Prediction Form */}
-        <div className="p-6 border-b border-gray-100/50">
-          <div className="mb-4">
-            <h3 className="text-lg font-bold text-gray-900 mb-2 flex items-center">
-              <div className="p-2 bg-gradient-to-r from-emerald-500 to-green-600 rounded-xl mr-3">
-                <svg
-                  className="w-5 h-5 text-white"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M13 10V3L4 14h7v7l9-11h-7z"
-                  />
-                </svg>
-              </div>
-              AI Prediction
-            </h3>
-            <p className="text-sm text-gray-600">
-              Machine learning powered traffic analysis
-            </p>
-          </div>
+    <div className="flex h-full bg-gray-50">
+      {/* Control Panel */}
+      <div className="w-80 bg-white shadow-lg overflow-y-auto border-r border-gray-200">
+        {/* ML Prediction Form */}
+        <div className="p-4 border-b border-gray-100">
           <PredictionForm
             onPredictionResult={handlePredictionResult}
             onLocationAdd={handleAddPredictionToMap}
           />
         </div>
 
-        {/* Enhanced Manual Search Section */}
-        <div className="p-6 border-b border-gray-100/50">
-          <div className="mb-4">
-            <h3 className="text-lg font-bold text-gray-900 mb-2 flex items-center">
-              <div className="p-2 bg-gradient-to-r from-blue-500 to-purple-600 rounded-xl mr-3">
-                <svg
-                  className="w-5 h-5 text-white"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
-                  />
-                </svg>
-              </div>
-              Location Search
-            </h3>
-            <p className="text-sm text-gray-600">
-              Find and analyze any location in Bangalore
-            </p>
-          </div>
-          <form onSubmit={handleSearch} className="space-y-4">
-            <div className="relative">
+        {/* Manual Search Section */}
+        <div className="p-4 border-b border-gray-100">
+          <h3 className="text-lg font-semibold text-gray-800 mb-3 flex items-center">
+            <svg
+              className="w-5 h-5 mr-2"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
+              />
+            </svg>
+            Manual Search
+          </h3>
+          <form onSubmit={handleSearch} className="space-y-3">
+            <div className="flex gap-2">
               <input
                 type="text"
                 ref={inputRef}
                 value={searchInput}
                 onChange={(e) => setSearchInput(e.target.value)}
                 placeholder="Enter location (e.g., MG Road, Bangalore)"
-                className="w-full pl-4 pr-12 py-3 border border-gray-200 rounded-2xl focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none text-sm bg-gray-50 focus:bg-white transition-all"
+                className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none text-sm"
                 disabled={isLoading}
               />
               <button
                 type="submit"
-                className={`absolute right-2 top-1/2 -translate-y-1/2 p-2 rounded-xl transition-all ${
+                className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
                   isLoading || !searchInput.trim()
                     ? "bg-gray-100 text-gray-400 cursor-not-allowed"
-                    : "bg-gradient-to-r from-blue-500 to-purple-600 text-white hover:from-blue-600 hover:to-purple-700 shadow-lg hover:shadow-xl transform hover:scale-105"
+                    : "bg-blue-600 text-white hover:bg-blue-700 active:bg-blue-800"
                 }`}
                 disabled={isLoading || !searchInput.trim()}
               >
@@ -342,7 +193,7 @@ const TrafficMap = () => {
                   </svg>
                 ) : (
                   <svg
-                    className="w-4 h-4"
+                    className="w-4 h-4 ml-1"
                     fill="none"
                     stroke="currentColor"
                     viewBox="0 0 24 24"
@@ -360,7 +211,7 @@ const TrafficMap = () => {
                       d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"
                     />
                   </svg>
-                )}{" "}
+                )}
                 Add
               </button>
             </div>
@@ -371,7 +222,7 @@ const TrafficMap = () => {
         <div className="p-4 border-b border-gray-100">
           <h3 className="text-lg font-semibold text-gray-800 mb-3 flex items-center">
             <svg
-              className="w-5 h-5"
+              className="w-5 h-5 mr-2"
               fill="none"
               stroke="currentColor"
               viewBox="0 0 24 24"
@@ -454,7 +305,7 @@ const TrafficMap = () => {
                     </span>
                   </div>
                   {loc.source === "ml-prediction" && (
-                    <div className="inline-flex items-center px-2 py-1 bg-purple-100 text-purple-800 rounded-full text-xs font-medium">
+                    <div className="inline-flex items-center gap-1 px-2 py-1 bg-purple-100 text-purple-800 rounded-full text-xs font-medium">
                       <svg
                         className="w-3 h-3"
                         fill="none"
@@ -498,7 +349,7 @@ const TrafficMap = () => {
 
       {/* Map Section */}
       <div className="flex-1 flex flex-col">
-        <div className="bg-white border-b border-gray-200 px-6 py-4 flex justify-between items-center">
+        <div className="bg-white border-b border-gray-200 px-6 py-4">
           <h3 className="text-xl font-bold text-gray-800 flex items-center">
             <svg
               className="w-5 h-5"
@@ -513,16 +364,8 @@ const TrafficMap = () => {
                 d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7"
               />
             </svg>
-            Live Traffic Map
+            Traffic Map
           </h3>
-          <div className="flex items-center gap-4">
-            <span className="inline-flex items-center px-2 py-1 bg-green-100 text-green-800 rounded-full text-sm font-medium">
-              🟢 Live
-            </span>
-            <span className="text-sm text-gray-500">
-              Last updated: just now
-            </span>
-          </div>
         </div>
 
         <div className="flex-1 p-4">
@@ -582,46 +425,29 @@ const TrafficMap = () => {
                             </span>
                           </div>
                         )}
-                        <div className="flex items-center justify-between">
-                          <span className="text-sm text-gray-600">Source:</span>
-                          <span className="font-medium">
-                            {loc.source === "ml-prediction" ? (
-                              <span className="flex items-center gap-1 text-xs">
-                                <svg
-                                  className="w-3 h-3"
-                                  fill="none"
-                                  stroke="currentColor"
-                                  viewBox="0 0 24 24"
-                                >
-                                  <path
-                                    strokeLinecap="round"
-                                    strokeLinejoin="round"
-                                    strokeWidth={2}
-                                    d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"
-                                  />
-                                </svg>
-                                ML Predicted
-                              </span>
-                            ) : (
-                              <span className="flex items-center gap-1 text-xs">
-                                <svg
-                                  className="w-3 h-3"
-                                  fill="none"
-                                  stroke="currentColor"
-                                  viewBox="0 0 24 24"
-                                >
-                                  <path
-                                    strokeLinecap="round"
-                                    strokeLinejoin="round"
-                                    strokeWidth={2}
-                                    d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"
-                                  />
-                                </svg>
-                                Real-time
-                              </span>
-                            )}
-                          </span>
-                        </div>
+                        {loc.source === "ml-prediction" && (
+                          <div className="flex items-center justify-between">
+                            <span className="text-sm text-gray-600">
+                              Source:
+                            </span>
+                            <span className="font-medium text-purple-600 flex items-center gap-1">
+                              <svg
+                                className="w-3 h-3"
+                                fill="none"
+                                stroke="currentColor"
+                                viewBox="0 0 24 24"
+                              >
+                                <path
+                                  strokeLinecap="round"
+                                  strokeLinejoin="round"
+                                  strokeWidth={2}
+                                  d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"
+                                />
+                              </svg>
+                              ML Predicted
+                            </span>
+                          </div>
+                        )}
                         {loc.recommendedAction && (
                           <div className="mt-3 p-3 bg-blue-50 rounded-lg border border-blue-200">
                             <div className="font-semibold text-blue-800 mb-1">
