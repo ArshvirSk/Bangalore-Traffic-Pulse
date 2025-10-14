@@ -175,30 +175,8 @@ const TrafficMap = () => {
     }
   };
 
-  // Handle search submission
-  const handleSearch = async (e) => {
-    e.preventDefault();
-    if (!searchInput.trim()) return;
-
-    setIsLoading(true);
-    const coords = await getCoordinates(searchInput.trim());
-    if (coords) {
-      const newLocation = {
-        name: searchInput.trim(),
-        congestion: Math.floor(Math.random() * 100), // Example: random congestion level
-        lat: coords.lat,
-        lon: coords.lon,
-      };
-      setLocations((prev) => [...prev, newLocation]);
-      setSearchResult(coords);
-      setSearchInput("");
-      inputRef.current.blur();
-    }
-    setIsLoading(false);
-  };
-
   return (
-    <div className="flex h-screen bg-gradient-to-br from-gray-50 via-blue-50 to-indigo-50">
+    <div className="flex h-screen overflow-hidden bg-gradient-to-br from-gray-50 via-blue-50 to-indigo-50">
       {/* Enhanced Control Panel */}
       <div className="w-96 bg-white/90 backdrop-blur-sm shadow-2xl overflow-y-auto border-r border-gray-200/50">
         {/* Professional Header */}
@@ -279,92 +257,6 @@ const TrafficMap = () => {
             onPredictionResult={handlePredictionResult}
             onLocationAdd={handleAddPredictionToMap}
           />
-        </div>
-
-        {/* Enhanced Manual Search Section */}
-        <div className="p-6 border-b border-gray-100/50">
-          <div className="mb-4">
-            <h3 className="text-lg font-bold text-gray-900 mb-2 flex items-center">
-              <div className="p-2 bg-gradient-to-r from-blue-500 to-purple-600 rounded-xl mr-3">
-                <svg
-                  className="w-5 h-5 text-white"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
-                  />
-                </svg>
-              </div>
-              Location Search
-            </h3>
-            <p className="text-sm text-gray-600">
-              Find and analyze any location in Bangalore
-            </p>
-          </div>
-          <form onSubmit={handleSearch} className="space-y-4">
-            <div className="relative">
-              <input
-                type="text"
-                ref={inputRef}
-                value={searchInput}
-                onChange={(e) => setSearchInput(e.target.value)}
-                placeholder="Enter location (e.g., MG Road, Bangalore)"
-                className="w-full pl-4 pr-12 py-3 border border-gray-200 rounded-2xl focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none text-sm bg-gray-50 focus:bg-white transition-all"
-                disabled={isLoading}
-              />
-              <button
-                type="submit"
-                className={`absolute right-2 top-1/2 -translate-y-1/2 p-2 rounded-xl transition-all ${
-                  isLoading || !searchInput.trim()
-                    ? "bg-gray-100 text-gray-400 cursor-not-allowed"
-                    : "bg-gradient-to-r from-blue-500 to-purple-600 text-white hover:from-blue-600 hover:to-purple-700 shadow-lg hover:shadow-xl transform hover:scale-105"
-                }`}
-                disabled={isLoading || !searchInput.trim()}
-              >
-                {isLoading ? (
-                  <svg
-                    className="w-4 h-4 animate-spin"
-                    fill="none"
-                    stroke="currentColor"
-                    viewBox="0 0 24 24"
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2}
-                      d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
-                    />
-                  </svg>
-                ) : (
-                  <svg
-                    className="w-4 h-4"
-                    fill="none"
-                    stroke="currentColor"
-                    viewBox="0 0 24 24"
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2}
-                      d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"
-                    />
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2}
-                      d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"
-                    />
-                  </svg>
-                )}{" "}
-                Add
-              </button>
-            </div>
-          </form>
         </div>
 
         {/* Legend */}

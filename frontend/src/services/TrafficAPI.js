@@ -43,6 +43,9 @@ class TrafficAPI {
       }
 
       const data = await response.json();
+
+      console.log("Prediction result:", data);
+
       return data;
     } catch (error) {
       console.error("Prediction failed:", error);

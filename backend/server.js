@@ -1,3 +1,4 @@
+require("dotenv").config();
 const express = require("express");
 const cors = require("cors");
 const helmet = require("helmet");
@@ -5,6 +6,7 @@ const morgan = require("morgan");
 const compression = require("compression");
 const { spawn } = require("child_process");
 const path = require("path");
+const axios = require("axios");
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -35,8 +37,14 @@ app.get("/api/health", (req, res) => {
 // Predict congestion endpoint
 app.post("/api/predict", async (req, res) => {
   try {
-    const { areaName, roadName, weatherConditions, roadworkActivity } =
-      req.body;
+    const {
+      startLocation,
+      areaName,
+      roadName,
+      weatherConditions,
+      roadworkActivity,
+      predictionDate,
+    } = req.body;
 
     // Validate input
     if (!areaName || !roadName || !weatherConditions || !roadworkActivity) {
@@ -51,24 +59,35 @@ app.post("/api/predict", async (req, res) => {
       });
     }
 
-    console.log("Prediction request:", {
+    console.log("Route optimization request:", {
+      startLocation,
       areaName,
       roadName,
       weatherConditions,
       roadworkActivity,
+      predictionDate,
     });
 
     // Call Python prediction script
     const pythonScript = path.join(__dirname, "predict.py");
     const pythonPath =
       "C:/ASK_Main/ASK_SFIT_BE_CO/SEM 5/Mini Project/.venv/Scripts/python.exe";
-    const pythonProcess = spawn(pythonPath, [
+
+    // Prepare arguments for Python script
+    const pythonArgs = [
       pythonScript,
       areaName,
       roadName,
       weatherConditions,
       roadworkActivity,
-    ]);
+    ];
+
+    // Add prediction date if provided
+    if (predictionDate) {
+      pythonArgs.push(predictionDate);
+    }
+
+    const pythonProcess = spawn(pythonPath, pythonArgs);
 
     let result = "";
     let error = "";
@@ -101,7 +120,11 @@ app.post("/api/predict", async (req, res) => {
         );
         const severity = getSeverityLevel(congestionLevel);
         const estimatedDelay = calculateEstimatedDelay(congestionLevel);
-        const recommendedAction = getRecommendedAction(congestionLevel);
+        const recommendedAction = getRecommendedAction(
+          congestionLevel,
+          startLocation,
+          areaName
+        );
 
         res.json({
           success: true,
@@ -112,10 +135,13 @@ app.post("/api/predict", async (req, res) => {
             recommendedAction: recommendedAction,
             timestamp: new Date().toISOString(),
             location: {
+              startLocation: startLocation,
               area: areaName,
               road: roadName,
               weather: weatherConditions,
               roadwork: roadworkActivity,
+              predictionDate:
+                predictionDate || new Date().toISOString().split("T")[0],
             },
           },
         });
@@ -211,6 +237,164 @@ app.get("/api/locations", (req, res) => {
   });
 });
 
+// Route optimization endpoint with multiple routing services
+app.post("/api/routes", async (req, res) => {
+  try {
+    const { origin, destination, routingService = "osrm" } = req.body;
+
+    if (!origin || !destination) {
+      return res.status(400).json({
+        error: "Origin and destination are required",
+      });
+    }
+
+    // Geocode origin and destination first
+    const [originCoords, destCoords] = await Promise.all([
+      geocodeLocation(origin),
+      geocodeLocation(destination),
+    ]);
+
+    if (!originCoords || !destCoords) {
+      return res.status(400).json({
+        error: "Unable to geocode origin or destination",
+      });
+    }
+
+    let routeData;
+
+    if (routingService === "google" && process.env.GOOGLE_ROUTES_API_KEY) {
+      // Google Routes API integration
+      routeData = await getGoogleRoute(origin, destination);
+    } else {
+      // Use OSRM (Open Source Routing Machine) as fallback
+      routeData = await getOSRMRoute(originCoords, destCoords);
+    }
+
+    res.json({
+      success: true,
+      route: routeData,
+      origin: {
+        address: origin,
+        coordinates: originCoords,
+      },
+      destination: {
+        address: destination,
+        coordinates: destCoords,
+      },
+      routingService: routingService,
+      timestamp: new Date().toISOString(),
+    });
+  } catch (error) {
+    console.error("Routes API error:", error);
+    res.status(500).json({
+      error: "Failed to fetch route",
+      message: error.message,
+    });
+  }
+});
+
+// Helper function to geocode location using Nominatim
+async function geocodeLocation(locationName) {
+  try {
+    const response = await axios.get(
+      `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(
+        locationName + ", Bangalore, India"
+      )}&limit=1`
+    );
+
+    if (response.data && response.data.length > 0) {
+      return {
+        lat: parseFloat(response.data[0].lat),
+        lon: parseFloat(response.data[0].lon),
+      };
+    }
+    return null;
+  } catch (error) {
+    console.error("Geocoding error:", error);
+    return null;
+  }
+}
+
+// Helper function to get route from OSRM
+async function getOSRMRoute(origin, destination) {
+  try {
+    const response = await axios.get(
+      `http://router.project-osrm.org/route/v1/driving/${origin.lon},${origin.lat};${destination.lon},${destination.lat}?overview=full&geometries=geojson&steps=true`
+    );
+
+    if (
+      response.data &&
+      response.data.routes &&
+      response.data.routes.length > 0
+    ) {
+      const route = response.data.routes[0];
+      return {
+        distance: Math.round(route.distance),
+        duration: Math.round(route.duration / 60), // Convert to minutes
+        geometry: route.geometry,
+        steps: route.legs[0].steps.map((step) => ({
+          instruction: step.maneuver.modifier
+            ? `${step.maneuver.type} ${step.maneuver.modifier}`
+            : step.maneuver.type,
+          distance: Math.round(step.distance),
+          duration: Math.round(step.duration / 60),
+          name: step.name || "Unknown road",
+        })),
+      };
+    }
+
+    throw new Error("No route found");
+  } catch (error) {
+    console.error("OSRM routing error:", error);
+    throw error;
+  }
+}
+
+// Helper function to get route from Google Routes API
+async function getGoogleRoute(origin, destination) {
+  try {
+    const GOOGLE_ROUTES_API_KEY = process.env.GOOGLE_ROUTES_API_KEY;
+
+    const response = await axios.post(
+      "https://routes.googleapis.com/directions/v2:computeRoutes",
+      {
+        origin: { address: origin },
+        destination: { address: destination },
+        travelMode: "DRIVE",
+        routingPreference: "TRAFFIC_AWARE",
+        computeAlternativeRoutes: false,
+        units: "METRIC",
+      },
+      {
+        headers: {
+          "Content-Type": "application/json",
+          "X-Goog-Api-Key": GOOGLE_ROUTES_API_KEY,
+          "X-Goog-FieldMask":
+            "routes.duration,routes.distanceMeters,routes.polyline.encodedPolyline",
+        },
+      }
+    );
+
+    if (
+      response.data &&
+      response.data.routes &&
+      response.data.routes.length > 0
+    ) {
+      const route = response.data.routes[0];
+      return {
+        distance: route.distanceMeters,
+        duration: Math.round(parseInt(route.duration.replace("s", "")) / 60),
+        encodedPolyline: route.polyline.encodedPolyline,
+      };
+    }
+
+    throw new Error("No route found from Google");
+  } catch (error) {
+    console.error("Google Routes API error:", error);
+    throw error;
+  }
+}
+
 // Bulk prediction endpoint for multiple locations
 app.post("/api/predict/bulk", async (req, res) => {
   try {
@@ -226,17 +410,23 @@ app.post("/api/predict/bulk", async (req, res) => {
 
     for (const location of locations) {
       try {
-        const { areaName, roadName, weatherConditions, roadworkActivity } =
-          location;
-
-        // Call Python script for each location
-        const pythonScript = path.join(__dirname, "predict.py");
-        const result = await callPythonScript(pythonScript, [
+        const {
           areaName,
           roadName,
           weatherConditions,
           roadworkActivity,
-        ]);
+          predictionDate,
+        } = location;
+
+        // Prepare arguments for Python script
+        const args = [areaName, roadName, weatherConditions, roadworkActivity];
+        if (predictionDate) {
+          args.push(predictionDate);
+        }
+
+        // Call Python script for each location
+        const pythonScript = path.join(__dirname, "predict.py");
+        const result = await callPythonScript(pythonScript, args);
 
         const congestionLevel = Math.max(
           0,
@@ -288,12 +478,19 @@ function calculateEstimatedDelay(congestionLevel) {
   return "0-3 minutes";
 }
 
-function getRecommendedAction(congestionLevel) {
+function getRecommendedAction(congestionLevel, startLocation, destination) {
+  const routeInfo =
+    startLocation && destination
+      ? ` from ${startLocation} to ${destination}`
+      : "";
+
   if (congestionLevel >= 80)
-    return "Avoid this route. Consider alternative paths.";
-  if (congestionLevel >= 60) return "Heavy traffic expected. Allow extra time.";
-  if (congestionLevel >= 40) return "Moderate traffic. Plan accordingly.";
-  return "Light traffic. Good time to travel.";
+    return `Avoid this route${routeInfo}. Consider alternative paths like Outer Ring Road or use public transport.`;
+  if (congestionLevel >= 60)
+    return `Heavy traffic expected${routeInfo}. Allow extra 15-20 minutes and consider leaving earlier.`;
+  if (congestionLevel >= 40)
+    return `Moderate traffic${routeInfo}. Plan for potential 5-10 minute delays.`;
+  return `Light traffic${routeInfo}. Good time to travel - optimal route conditions.`;
 }
 
 function callPythonScript(scriptPath, args) {

@@ -1,8 +1,6 @@
 import { Route, BrowserRouter as Router, Routes } from "react-router-dom";
 import Navbar from "./components/Navbar";
 import Analytics from "./pages/Analytics";
-import Dashboard from "./pages/Dashboard";
-import Reports from "./pages/Reports";
 import TrafficMap from "./pages/TrafficMap";
 
 function App() {
