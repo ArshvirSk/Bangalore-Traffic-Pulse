@@ -1,11 +1,15 @@
 // TrafficMap.jsx
+import { addDoc, collection, serverTimestamp } from "firebase/firestore";
 import L from "leaflet";
 import "leaflet-routing-machine";
 import "leaflet/dist/leaflet.css";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Circle, MapContainer, Popup, TileLayer, useMap } from "react-leaflet";
+import { useSearchParams } from "react-router-dom";
 import PredictionForm from "../components/PredictionForm";
 import PredictionResults from "../components/PredictionResults";
+import { useAuth } from "../services/AuthContext";
+import { db } from "../services/firebase";
 
 // Add custom styles for route markers and tooltips
 const routeStyles = `
@@ -706,6 +710,104 @@ const TrafficMap = () => {
   const [currentWeather, setCurrentWeather] = useState(null);
   const [isLoadingWeather, setIsLoadingWeather] = useState(false);
 
+  // Add URL search params support
+  const [searchParams] = useSearchParams();
+  const { currentUser } = useAuth();
+
+  // Storage function for predictions and routes
+  const storePredictionData = useCallback(
+    async (predictionData, routeData) => {
+      if (!currentUser) {
+        console.log("No user logged in, skipping Firebase storage");
+        return;
+      }
+
+      try {
+        console.log("Storing prediction data to Firebase:", {
+          predictionData,
+          routeData,
+        });
+
+        // Flatten route data to avoid nested arrays issue in Firestore
+        const flattenedRouteData = {
+          success: routeData.success,
+          routingService: routeData.routingService,
+          timestamp: routeData.timestamp,
+          origin: {
+            address: routeData.origin?.address,
+            coordinates: routeData.origin?.coordinates,
+          },
+          destination: {
+            address: routeData.destination?.address,
+            coordinates: routeData.destination?.coordinates,
+          },
+          route: {
+            distance: routeData.route?.distance,
+            duration: routeData.route?.duration,
+            // Convert geometry coordinates to string to avoid nested array issue
+            geometryCoordinates: routeData.route?.geometry?.coordinates
+              ? JSON.stringify(routeData.route.geometry.coordinates)
+              : null,
+            geometryType: routeData.route?.geometry?.type,
+            // Convert steps array to string to avoid nested array issue
+            stepsData: routeData.route?.steps
+              ? JSON.stringify(routeData.route.steps)
+              : null,
+            stepsCount: routeData.route?.steps?.length || 0,
+          },
+        };
+
+        const docData = {
+          userId: currentUser.uid,
+          predictionData: predictionData,
+          routeData: flattenedRouteData,
+          timestamp: serverTimestamp(),
+          createdAt: new Date().toISOString(),
+        };
+
+        const docRef = await addDoc(
+          collection(db, "traffic_predictions"),
+          docData
+        );
+        console.log("Prediction data stored successfully with ID:", docRef.id);
+        return docRef.id;
+      } catch (error) {
+        console.error("Error storing prediction data to Firebase:", error);
+        throw error;
+      }
+    },
+    [currentUser]
+  );
+
+  // Storage function for general trip data (for dashboard integration)
+  const storeTripData = useCallback(
+    async (tripData) => {
+      if (!currentUser) {
+        console.log("No user logged in, skipping trip storage");
+        return;
+      }
+
+      try {
+        console.log("Storing trip data to Firebase:", tripData);
+
+        const docData = {
+          userId: currentUser.uid,
+          tripData: tripData,
+          timestamp: serverTimestamp(),
+          createdAt: new Date().toISOString(),
+        };
+
+        const docRef = await addDoc(collection(db, "user_trips"), docData);
+        console.log("Trip data stored successfully with ID:", docRef.id);
+        return docRef.id;
+      } catch (error) {
+        console.error("Error storing trip data to Firebase:", error);
+        throw error;
+      }
+    },
+    [currentUser]
+  );
+
   // Function to get congestion color
   const getCongestionColor = (level) => {
     if (level >= 80) return "#ff4444"; // High congestion - Red
@@ -753,6 +855,96 @@ const TrafficMap = () => {
     setShowPredictionResults(true);
   };
 
+  // Handle URL parameters for loading specific routes
+  useEffect(() => {
+    const startLocation = searchParams.get("start");
+    const endLocation = searchParams.get("end");
+
+    if (startLocation && endLocation) {
+      // Auto-load route from URL parameters
+      const loadRouteFromParams = async () => {
+        try {
+          setIsLoading(true);
+
+          // Get coordinates for both locations
+          const startCoords = await getCoordinates(startLocation);
+          const endCoords = await getCoordinates(endLocation);
+
+          if (startCoords && endCoords) {
+            // Create locations array
+            const routeLocations = [
+              {
+                name: startLocation,
+                lat: startCoords.lat,
+                lon: startCoords.lon,
+                isPrimary: true,
+                isStart: true,
+              },
+              {
+                name: endLocation,
+                lat: endCoords.lat,
+                lon: endCoords.lon,
+                isPrimary: true,
+                isEnd: true,
+              },
+            ];
+
+            setLocations(routeLocations);
+
+            // Trigger route calculation
+            const routeResponse = await fetch(
+              "http://localhost:5000/api/routes",
+              {
+                method: "POST",
+                headers: {
+                  "Content-Type": "application/json",
+                },
+                body: JSON.stringify({
+                  origin: startLocation,
+                  destination: endLocation,
+                  routingService: "osrm",
+                }),
+              }
+            );
+
+            if (routeResponse.ok) {
+              const routeData = await routeResponse.json();
+              if (routeData.success) {
+                setRouteInfo(routeData.route);
+
+                // Store trip data to Firebase (from dashboard clicks)
+                try {
+                  const tripData = {
+                    startLocation: startLocation,
+                    endLocation: endLocation,
+                    source: "dashboard-click",
+                    routeData: routeData,
+                  };
+                  const firebaseDocId = await storeTripData(tripData);
+                  console.log(
+                    "🔥 Dashboard trip stored to Firebase with ID:",
+                    firebaseDocId
+                  );
+                } catch (firebaseError) {
+                  console.error(
+                    "❌ Firebase trip storage failed:",
+                    firebaseError
+                  );
+                }
+              }
+            }
+          }
+        } catch (error) {
+          console.error("Error loading route from URL params:", error);
+        } finally {
+          setIsLoading(false);
+        }
+      };
+
+      loadRouteFromParams();
+    }
+  }, [searchParams, storeTripData]);
+
   // Fetch weather data on component mount
   useEffect(() => {
     const getWeather = async () => {
@@ -772,6 +964,9 @@ const TrafficMap = () => {
 
   // Handle adding ML prediction to map with route plotting
   const handleAddPredictionToMap = async (predictionData) => {
+    console.log("🗺️ Find optimal route and add to map clicked!");
+    console.log("📊 Prediction Data:", predictionData);
+
     try {
       setIsLoading(true);
 
@@ -790,8 +985,10 @@ const TrafficMap = () => {
 
       if (routeResponse.ok) {
         const routeData = await routeResponse.json();
+        console.log("🛣️ Route API Response:", routeData);
 
         if (routeData.success) {
+          console.log("✅ Route calculation successful!");
           // Create location for destination
           const newLocation = {
             name: predictionData.name,
@@ -811,9 +1008,10 @@ const TrafficMap = () => {
           };
 
           setLocations((prev) => [...prev, newLocation]);
+          console.log("📍 New location added to map:", newLocation);
 
           // Set route information for display with real route data
-          setRouteInfo({
+          const routeInfo = {
             start: routeData.origin.coordinates,
             end: routeData.destination.coordinates,
             startLocation: predictionData.startLocation,
@@ -822,11 +1020,30 @@ const TrafficMap = () => {
             routeData: routeData.route,
             distance: routeData.route.distance,
             duration: routeData.route.duration,
-          });
+          };
+
+          setRouteInfo(routeInfo);
+          console.log("🛣️ Route info set:", routeInfo);
 
           setSearchResult(routeData.destination.coordinates);
+          console.log(
+            "🎯 Search result updated:",
+            routeData.destination.coordinates
+          );
+
+          // Store to Firebase
+          try {
+            const firebaseDocId = await storePredictionData(
+              predictionData,
+              routeData
+            );
+            console.log("🔥 Data stored to Firebase with ID:", firebaseDocId);
+          } catch (firebaseError) {
+            console.error("❌ Firebase storage failed:", firebaseError);
+          }
         }
       } else {
+        console.log("⚠️ Route API failed, falling back to geocoding");
         // Fallback to geocoding if route API fails
         const [startCoords, destCoords] = await Promise.all([
           getCoordinates(`${predictionData.startLocation}, Bangalore`),
@@ -834,8 +1051,12 @@ const TrafficMap = () => {
             `${predictionData.area}, ${predictionData.road}, Bangalore`
           ),
         ]);
+        console.log("🌍 Geocoding results:", { startCoords, destCoords });
 
         if (startCoords && destCoords) {
+          console.log(
+            "✅ Geocoding successful, adding location with fallback method"
+          );
           const newLocation = {
             name: predictionData.name,
             startLocation: predictionData.startLocation,
@@ -854,22 +1075,66 @@ const TrafficMap = () => {
           };
 
           setLocations((prev) => [...prev, newLocation]);
+          console.log("📍 Fallback location added to map:", newLocation);
 
-          setRouteInfo({
+          const fallbackRouteInfo = {
             start: startCoords,
             end: destCoords,
             startLocation: predictionData.startLocation,
             destination: `${predictionData.area}, ${predictionData.road}`,
             prediction: predictionData,
-          });
+          };
+
+          setRouteInfo(fallbackRouteInfo);
+          console.log("🛣️ Fallback route info set:", fallbackRouteInfo);
 
           setSearchResult(destCoords);
+          console.log("🎯 Fallback search result updated:", destCoords);
+
+          // Store to Firebase (fallback case)
+          try {
+            const fallbackRouteData = {
+              success: true,
+              routingService: "geocoding-fallback",
+              timestamp: new Date().toISOString(),
+              route: {
+                distance: "N/A (geocoding fallback)",
+                duration: "N/A (geocoding fallback)",
+                geometryCoordinates: null,
+                geometryType: null,
+                stepsData: null,
+                stepsCount: 0,
+              },
+              origin: {
+                address: predictionData.startLocation,
+                coordinates: startCoords,
+              },
+              destination: {
+                address: `${predictionData.area}, ${predictionData.road}`,
+                coordinates: destCoords,
+              },
+            };
+            const firebaseDocId = await storePredictionData(
+              predictionData,
+              fallbackRouteData
+            );
+            console.log(
+              "🔥 Fallback data stored to Firebase with ID:",
+              firebaseDocId
+            );
+          } catch (firebaseError) {
+            console.error(
+              "❌ Firebase fallback storage failed:",
+              firebaseError
+            );
+          }
         }
       }
     } catch (error) {
-      console.error("Failed to add prediction to map:", error);
+      console.error("❌ Failed to add prediction to map:", error);
     } finally {
       setIsLoading(false);
+      console.log("🏁 Add to map process completed");
     }
   };
 

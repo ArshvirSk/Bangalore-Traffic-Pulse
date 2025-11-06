@@ -1,10 +1,40 @@
+import { useState } from "react";
 import { Link, useLocation } from "react-router-dom";
 import NavLogo from "../assets/logo.png";
+import { useAuth } from "../services/AuthContext";
+import ProfileImage from "./ProfileImage";
 
 const Navbar = () => {
   const location = useLocation();
+  const { currentUser, userProfile, logout } = useAuth();
+  const [dropdownOpen, setDropdownOpen] = useState(false);
 
   const navItems = [
+    {
+      path: "/dashboard",
+      label: "Dashboard",
+      icon: (
+        <svg
+          className="w-5 h-5"
+          fill="none"
+          stroke="currentColor"
+          viewBox="0 0 24 24"
+        >
+          <path
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            strokeWidth={2}
+            d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2H5a2 2 0 00-2-2z"
+          />
+          <path
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            strokeWidth={2}
+            d="M8 5a2 2 0 012-2h2a2 2 0 012 2v2H8V5z"
+          />
+        </svg>
+      ),
+    },
     {
       path: "/",
       label: "Traffic Map",
@@ -130,6 +160,119 @@ const Navbar = () => {
               <div className="text-xs text-gray-500 uppercase tracking-wide">
                 Areas Monitored
               </div>
+            </div>
+
+            {/* Authentication Section */}
+            <div className="border-t border-gray-100 pt-4">
+              {currentUser ? (
+                <div className="relative">
+                  <button
+                    onClick={() => setDropdownOpen(!dropdownOpen)}
+                    className="flex items-center w-full px-3 py-2 text-left text-sm font-medium text-gray-700 rounded-lg hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  >
+                    <ProfileImage
+                      src={currentUser.photoURL}
+                      alt="Profile"
+                      size="h-8 w-8"
+                      fallbackText={
+                        userProfile?.displayName?.charAt(0)?.toUpperCase() ||
+                        currentUser.email?.charAt(0)?.toUpperCase() ||
+                        "U"
+                      }
+                      className="mr-3"
+                    />
+                    <div className="flex-1 min-w-0">
+                      <div className="text-sm font-medium text-gray-900 truncate">
+                        {userProfile?.displayName || "User"}
+                      </div>
+                      <div className="text-xs text-gray-500 truncate">
+                        {currentUser.email}
+                      </div>
+                    </div>
+                    <svg
+                      className={`w-4 h-4 transition-transform ${
+                        dropdownOpen ? "rotate-180" : ""
+                      }`}
+                      fill="none"
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2}
+                        d="M19 9l-7 7-7-7"
+                      />
+                    </svg>
+                  </button>
+
+                  {dropdownOpen && (
+                    <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg z-50">
+                      <Link
+                        to="/profile"
+                        className="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 rounded-t-lg"
+                        onClick={() => setDropdownOpen(false)}
+                      >
+                        <div className="flex items-center">
+                          <svg
+                            className="w-4 h-4 mr-2"
+                            fill="none"
+                            stroke="currentColor"
+                            viewBox="0 0 24 24"
+                          >
+                            <path
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                              strokeWidth={2}
+                              d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"
+                            />
+                          </svg>
+                          Profile Settings
+                        </div>
+                      </Link>
+                      <button
+                        onClick={() => {
+                          logout();
+                          setDropdownOpen(false);
+                        }}
+                        className="block w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-red-50 rounded-b-lg"
+                      >
+                        <div className="flex items-center">
+                          <svg
+                            className="w-4 h-4 mr-2"
+                            fill="none"
+                            stroke="currentColor"
+                            viewBox="0 0 24 24"
+                          >
+                            <path
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                              strokeWidth={2}
+                              d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"
+                            />
+                          </svg>
+                          Sign Out
+                        </div>
+                      </button>
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  <Link
+                    to="/login"
+                    className="block w-full px-3 py-2 text-center text-sm font-medium text-blue-600 bg-blue-50 rounded-lg hover:bg-blue-100 transition-colors"
+                  >
+                    Sign In
+                  </Link>
+                  <Link
+                    to="/signup"
+                    className="block w-full px-3 py-2 text-center text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors"
+                  >
+                    Sign Up
+                  </Link>
+                </div>
+              )}
             </div>
           </div>
 

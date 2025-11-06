@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { useAuth } from "../services/AuthContext";
 import TrafficAPI from "../services/TrafficAPI";
 
 // Weather API function that considers prediction date
@@ -190,8 +191,11 @@ const getPredictedWeatherByDate = (predictionDate) => {
 };
 
 const PredictionForm = ({ onPredictionResult, onLocationAdd }) => {
+  const { userProfile, saveUserTrip, updateRecentSearches, addToFavorites } =
+    useAuth();
+
   const [formData, setFormData] = useState({
-    startLocation: "",
+    startLocation: userProfile?.preferences?.defaultStartLocation || "",
     areaName: "",
     roadName: "",
     roadworkActivity: "No",
@@ -316,9 +320,17 @@ const PredictionForm = ({ onPredictionResult, onLocationAdd }) => {
         // Pass the prediction result to parent
         onPredictionResult(prediction.prediction);
 
+        // Update recent searches for logged-in users
+        if (userProfile) {
+          await updateRecentSearches({
+            startLocation: formData.startLocation,
+            endLocation: `${formData.areaName}, ${formData.roadName}`,
+          });
+        }
+
         // Also add to map if callback provided
         if (onLocationAdd) {
-          onLocationAdd({
+          const routeData = {
             name: `${formData.startLocation} → ${formData.areaName}, ${formData.roadName}`,
             startLocation: formData.startLocation,
             area: formData.areaName,
@@ -330,12 +342,46 @@ const PredictionForm = ({ onPredictionResult, onLocationAdd }) => {
             estimatedDelay: prediction.prediction.estimatedDelay,
             recommendedAction: prediction.prediction.recommendedAction,
             timestamp: prediction.prediction.timestamp,
-          });
+          };
+
+          onLocationAdd(routeData);
+
+          // Save trip data for logged-in users
+          if (userProfile) {
+            try {
+              // Calculate time saved based on traffic conditions
+              const baseTime = routeData.estimatedDelay || 30; // Default base time in minutes
+              const timeSavedMinutes =
+                prediction.prediction.congestionLevel === "Low"
+                  ? Math.round(baseTime * 0.3)
+                  : prediction.prediction.congestionLevel === "Medium"
+                  ? Math.round(baseTime * 0.15)
+                  : 0;
+
+              await saveUserTrip({
+                startLocation: formData.startLocation,
+                endLocation: `${formData.areaName}, ${formData.roadName}`,
+                distance:
+                  routeData.distance || Math.round(Math.random() * 15 + 5), // Random distance 5-20km if not available
+                duration: routeData.estimatedDelay || baseTime,
+                timeSaved: timeSavedMinutes,
+                congestion: prediction.prediction.congestionLevel,
+                avgCongestion: prediction.prediction.congestionLevel,
+                severity: prediction.prediction.severity,
+                recommendedAction: prediction.prediction.recommendedAction,
+                weather: currentWeather?.condition || "Clear",
+                date: formData.predictionDate,
+                roadwork: formData.roadworkActivity,
+              });
+            } catch (error) {
+              console.error("Error saving trip:", error);
+            }
+          }
         }
 
-        // Reset form
+        // Reset form but keep user's default start location
         setFormData({
-          startLocation: "",
+          startLocation: userProfile?.preferences?.defaultStartLocation || "",
           areaName: "",
           roadName: "",
           roadworkActivity: "No",
@@ -700,6 +746,50 @@ const PredictionForm = ({ onPredictionResult, onLocationAdd }) => {
               </>
             )}
           </button>
+
+          {/* Add to Favorites Button (only show for logged-in users with valid route) */}
+          {userProfile &&
+            formData.startLocation &&
+            formData.areaName &&
+            formData.roadName && (
+              <button
+                type="button"
+                onClick={async () => {
+                  try {
+                    const added = await addToFavorites({
+                      startLocation: formData.startLocation,
+                      endLocation: `${formData.areaName}, ${formData.roadName}`,
+                      distance: 0, // Will be updated when route is calculated
+                      duration: 0, // Will be updated when route is calculated
+                    });
+                    if (added) {
+                      alert("Route added to favorites!");
+                    } else {
+                      alert("Route is already in your favorites.");
+                    }
+                  } catch (error) {
+                    console.error("Error adding to favorites:", error);
+                    alert("Failed to add route to favorites.");
+                  }
+                }}
+                className="w-full py-2 px-4 rounded-lg font-medium text-sm transition-colors flex items-center justify-center gap-2 bg-gray-100 text-gray-700 hover:bg-gray-200 border border-gray-300"
+              >
+                <svg
+                  className="w-4 h-4"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z"
+                  />
+                </svg>
+                Save as Favorite Route
+              </button>
+            )}
 
           {errors.submit && (
             <div className="bg-red-50 border border-red-200 text-red-700 px-3 py-2 rounded-lg text-sm flex items-center gap-2">
